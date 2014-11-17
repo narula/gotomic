@@ -1,9 +1,9 @@
 Non blocking hash table for Go, designed to have read performance
 close to that of go's native map, but without requiring a RWMutex.
 This should perform better if you have a lot of cores.  Copied from
-github.com/zond/gotomic, with a few changes:
+http://github.com/zond/gotomic, with a few changes:
 
-* Remove interfaces; strong typing for keys and hash table entires means less memory allocation
+* Remove interfaces; strong typing for keys and hash table entries means fewer memory allocations
 * Thread-local datastructures that are reused instead of allocating temporary datastructures per request
 
 ## Results
