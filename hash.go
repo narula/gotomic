@@ -48,6 +48,21 @@ type entry struct {
 	value    unsafe.Pointer
 }
 
+type LocalData struct {
+	te  *entry
+	hh  *hashHit
+	hit *hit
+}
+
+func InitLocalData() *LocalData {
+	l := &LocalData{
+		te:  &entry{},
+		hh:  &hashHit{},
+		hit: &hit{nil, nil, nil},
+	}
+	return l
+}
+
 func ReusableEntry() *entry {
 	return &entry{}
 }
@@ -261,15 +276,15 @@ func (self *hashHit) search(cmp *entry, tmpval *hashHit) (rval *hashHit) {
 // GetHC returns the key with hashCode that equals k.  Use this when
 // you already have the hash code and don't want to force gotomic to
 // calculate it again.
-func (self *Hash) GetHC(hashCode uint32, k Key, testEntry *entry, tmp *hashHit, hh *hit) (rval Thing, ok bool) {
+func (self *Hash) GetHC(hashCode uint32, k Key, ld *LocalData) (rval Thing, ok bool) {
 	//	fmt.Printf("gotomic: hashcode: %v for key %v ", hashCode, k)
 	//  testEntry := newRealEntryWithHashCode(k, nil, hashCode)
-	testEntry.Set(hashCode, k)
-	bucket := self.getBucketByIndexWrapper(testEntry.hashCode, hh)
-	hh.Set(bucket)
-	hit := (*hashHit)(bucket.search2(testEntry, hh))
-	tmp.Set(hit)
-	if hit2 := hit.search(testEntry, tmp); hit2.element != nil {
+	ld.te.Set(hashCode, k)
+	bucket := self.getBucketByIndexWrapper(ld.te.hashCode, ld.hit)
+	ld.hit.Set(bucket)
+	hit := (*hashHit)(bucket.search2(ld.te, ld.hit))
+	ld.hh.Set(hit)
+	if hit2 := hit.search(ld.te, ld.hh); hit2.element != nil {
 		rval = hit2.element.entry.val()
 		ok = true
 	}
@@ -278,10 +293,8 @@ func (self *Hash) GetHC(hashCode uint32, k Key, testEntry *entry, tmp *hashHit, 
 
 // Get returns the value at k and whether it was present in the Hash.
 func (self *Hash) Get(k Key) (Thing, bool) {
-	te := ReusableEntry()
-	tmp := ReusableHashHit()
-	hh := ReusableHit()
-	return self.GetHC(k.HashCode(), k, te, tmp, hh)
+	ld := InitLocalData()
+	return self.GetHC(k.HashCode(), k, ld)
 }
 
 // DeleteHC removes the key with hashCode that equals k and returns
