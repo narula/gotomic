@@ -11,6 +11,13 @@ var deletedElement = "deleted"
 
 type ListIterator func(t Thing) bool
 
+type element struct {
+	// The next element in the list. If this pointer has the deleted
+	// flag set it means THIS element, not the next one, is deleted.
+	unsafe.Pointer
+	value Thing
+}
+
 type hit struct {
 	left    *element
 	element *element
@@ -32,11 +39,13 @@ type Thing interface{}
 
 var list_head = "LIST_HEAD"
 
-/*
- List is a singly linked list based on "A Pragmatic Implementation of Non-Blocking Linked-Lists" by Timothy L. Harris <http://www.timharris.co.uk/papers/2001-disc.pdf>
+// List is a singly linked list based on "A Pragmatic Implementation
+// of Non-Blocking Linked-Lists" by Timothy L. Harris
+// <http://www.timharris.co.uk/papers/2001-disc.pdf>
 
- It is thread safe and non-blocking, and supports ordered elements by using List#inject with values implementing Comparable.
-*/
+// It is thread safe and non-blocking, and supports ordered elements
+// by using List#inject with values implementing Comparable.
+
 type List struct {
 	*element
 	size int64
@@ -46,17 +55,13 @@ func NewList() *List {
 	return &List{&element{nil, &list_head}, 0}
 }
 
-/*
- Push adds t to the top of the List.
-*/
+// Push adds t to the top of the List.
 func (self *List) Push(t Thing) {
 	self.element.add(t)
 	atomic.AddInt64(&self.size, 1)
 }
 
-/*
- Pop removes and returns the top of the List.
-*/
+// Pop removes and returns the top of the List.
 func (self *List) Pop() (rval Thing, ok bool) {
 	if rval, ok := self.element.remove(); ok {
 		atomic.AddInt64(&self.size, -1)
@@ -67,7 +72,7 @@ func (self *List) Pop() (rval Thing, ok bool) {
 
 /*
  Each will run i on each element.
- 
+
  It returns true if the iteration was interrupted.
  This is the case when one of the ListIterator calls returned true, indicating
  the iteration should be stopped.
@@ -109,20 +114,12 @@ func (self *List) Inject(c Comparable) {
 	atomic.AddInt64(&self.size, 1)
 }
 
-type element struct {
-	/*
-	 The next element in the list. If this pointer has the deleted flag set it means THIS element, not the next one, is deleted.
-	*/
-	unsafe.Pointer
-	value Thing
-}
-
 func (self *element) next() *element {
 	next := atomic.LoadPointer(&self.Pointer)
 	for next != nil {
 		nextElement := (*element)(next)
 		/*
-		 If our next element contains &deletedElement that means WE are deleted, and 
+		 If our next element contains &deletedElement that means WE are deleted, and
 		 we can just return the next-next element. It will make it impossible to add
 		 stuff to us, since we will always lie about our next(), but then again, deleted
 		 elements shouldn't get new children anyway.
@@ -289,6 +286,39 @@ func (self *element) search(c Comparable) (rval *hit) {
 		rval.right = nil
 	}
 	panic(fmt.Sprint("Unable to search for ", c, " in ", self))
+}
+
+func (self *element) search2(c Comparable, hh *hit) (rval *hit) {
+	//rval = &hit{nil, self, nil}
+	rval = hh
+	for {
+		if rval.element == nil {
+			return
+		}
+		rval.right = rval.element.next()
+		if rval.element.value != &list_head {
+			switch cmp := c.Compare(rval.element.value); {
+			case cmp < 0:
+				rval.right = rval.element
+				rval.element = nil
+				return
+			case cmp == 0:
+				return
+			}
+		}
+		rval.left = rval.element
+		rval.element = rval.left.next()
+		rval.right = nil
+	}
+	panic(fmt.Sprint("Unable to search for ", c, " in ", self))
+}
+
+func ReusableHit() *hit {
+	return &hit{nil, nil, nil}
+}
+
+func (h *hit) Set(e *element) {
+	h.element = e
 }
 
 /*

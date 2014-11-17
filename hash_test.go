@@ -129,7 +129,7 @@ func BenchmarkHashConc(b *testing.B) {
 	runtime.GOMAXPROCS(1)
 }
 
-func TestPutIfPresent(t *testing.T) {
+func TestHashPutIfPresent(t *testing.T) {
 	h := NewHash()
 	assertMappy(t, h, map[Hashable]Thing{})
 	if h.PutIfPresent(StringKey("k"), StringKey("v"), StringKey("blabla")) {
@@ -156,9 +156,10 @@ func TestPutIfPresent(t *testing.T) {
 		t.Error(h, "should contain 'k': 'v2'")
 	}
 	assertMappy(t, h, map[Hashable]Thing{StringKey("k"): StringKey("v3")})
+	fmt.Println("...Done TestHashPutIfPresent")
 }
 
-func TestNilValues(t *testing.T) {
+func TestHashNilValues(t *testing.T) {
 	h := NewHash()
 	assertMappy(t, h, map[Hashable]Thing{})
 	h.Put(StringKey("k"), nil)
@@ -170,9 +171,10 @@ func TestNilValues(t *testing.T) {
 	if v != nil {
 		t.Error(h, "should contain 'k' => nil")
 	}
+	fmt.Println("...Done TestHashNilValues")
 }
 
-func TestPutIfMissing(t *testing.T) {
+func TestHashPutIfMissing(t *testing.T) {
 	h := NewHash()
 	assertMappy(t, h, map[Hashable]Thing{})
 	if !h.PutIfMissing(StringKey("k"), "v") {
@@ -183,10 +185,11 @@ func TestPutIfMissing(t *testing.T) {
 		t.Error(h, "should contain 'k'")
 	}
 	assertMappy(t, h, map[Hashable]Thing{StringKey("k"): "v"})
+	fmt.Println("...Done TestHashPutIfMissing")
 }
 
-func TestConcurrency(t *testing.T) {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+func TestHashConcurrency(t *testing.T) {
+	runtime.GOMAXPROCS(runtime.NumCPU() / 4)
 	h := NewHash()
 	cmp := make(map[Hashable]Thing)
 	for i := 0; i < 1000; i++ {
@@ -206,6 +209,7 @@ func TestConcurrency(t *testing.T) {
 		<-done
 	}
 	assertMappy(t, h, cmp)
+	fmt.Println("...Done TestHashConcurrency")
 }
 
 func TestHashEach(t *testing.T) {
@@ -231,6 +235,7 @@ func TestHashEach(t *testing.T) {
 	if !reflect.DeepEqual(cmp, m) {
 		t.Error(m, "should be", cmp)
 	}
+	fmt.Println("...Done TestHashEach")
 }
 
 func TestHashEachInterrupt(t *testing.T) {
@@ -244,7 +249,7 @@ func TestHashEachInterrupt(t *testing.T) {
 
 	interrupted := h.Each(func(k Hashable, v Thing) bool {
 		m[k] = v
-		
+
 		// Break the iteration when we reach 2 elements
 		return len(m) == 2
 	})
@@ -256,9 +261,10 @@ func TestHashEachInterrupt(t *testing.T) {
 	if len(m) != 2 {
 		t.Error(m, "should have 2 elements. Have", len(m))
 	}
+	fmt.Println("...Done TestHashInterrupt")
 }
 
-func TestPutDelete(t *testing.T) {
+func TestHashPutDelete(t *testing.T) {
 	h := NewHash()
 	if v, _ := h.Delete(StringKey("e")); v != nil {
 		t.Error(h, "should not be able to delete 'e' but got ", v)
@@ -304,4 +310,5 @@ func TestPutDelete(t *testing.T) {
 		t.Error(h, "should not be able to delete 'e' but got ", v)
 	}
 	assertMappy(t, h, map[Hashable]Thing{})
+	fmt.Println("...Done TestHashPutDelete")
 }

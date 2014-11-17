@@ -13,30 +13,6 @@ const default_load_factor = 0.5
 
 type HashIterator func(k Hashable, v Thing) bool
 
-type hashHit hit
-
-func (self *hashHit) search(cmp *entry) (rval *hashHit) {
-	rval = &hashHit{self.left, self.element, self.right}
-	for {
-		if rval.element == nil {
-			break
-		}
-		rval.right = rval.element.next()
-		e := rval.element.value.(*entry)
-		if e.hashKey != cmp.hashKey {
-			rval.right = rval.element
-			rval.element = nil
-			break
-		}
-		if cmp.key.Equals(e.key) {
-			break
-		}
-		rval.left = rval.element
-		rval.element = rval.left.next()
-		rval.right = nil
-	}
-	return
-}
 func (self *hashHit) String() string {
 	return fmt.Sprint("&hashHit{", self.left.val(), self.element.val(), self.right.val(), "}")
 }
@@ -90,6 +66,27 @@ type entry struct {
 	value    unsafe.Pointer
 }
 
+func ReusableEntry() *entry {
+	return &entry{}
+}
+
+func ReusableHashHit() *hashHit {
+	return &hashHit{}
+}
+
+func (hh *hashHit) Set(hh2 *hashHit) {
+	hh.left = hh2.left
+	hh.element = hh2.element
+	hh.right = hh2.right
+}
+
+func (te *entry) Set(hc uint32, k Hashable) {
+	te.hashCode = hc
+	te.hashKey = reverse(hc) | 1
+	te.key = k
+	te.value = nil
+}
+
 func newRealEntryWithHashCode(k Hashable, v Thing, hc uint32) *entry {
 	return &entry{hc, reverse(hc) | 1, k, unsafe.Pointer(&v)}
 }
@@ -128,13 +125,23 @@ func (self *entry) Compare(t Thing) int {
 }
 
 /*
- Hash is a hash table based on "Split-Ordered Lists: Lock-Free Extensible Hash Tables" by Ori Shalev and Nir Shavit <http://www.cs.ucf.edu/~dcm/Teaching/COT4810-Spring2011/Literature/SplitOrderedLists.pdf>.
+ Hash is a hash table based on "Split-Ordered Lists: Lock-Free
+ Extensible Hash Tables" by Ori Shalev and Nir Shavit
+ <http://www.cs.ucf.edu/~dcm/Teaching/COT4810-Spring2011/Literature/SplitOrderedLists.pdf>.
 
- TL;DR: It creates a linked list containing all hashed entries, and an extensible table of 'shortcuts' into said list. To enable future extensions to the shortcut table, the list is ordered in reversed bit order so that new table entries point into finer and finer sections of the potential address space.
+ TL;DR: It creates a linked list containing all hashed entries, and an
+ extensible table of 'shortcuts' into said list. To enable future
+ extensions to the shortcut table, the list is ordered in reversed bit
+ order so that new table entries point into finer and finer sections
+ of the potential address space.
 
- To enable growing the table a two dimensional slice of unsafe.Pointers is used, where each consecutive slice is twice the size of the one before.
- This makes it simple to allocate exponentially more memory for the table with only a single extra indirection.
+ To enable growing the table a two dimensional slice of
+ unsafe.Pointers is used, where each consecutive slice is twice the
+ size of the one before.  This makes it simple to allocate
+ exponentially more memory for the table with only a single extra
+ indirection.
 */
+
 type Hash struct {
 	exponent   uint32
 	buckets    []unsafe.Pointer
@@ -143,21 +150,22 @@ type Hash struct {
 }
 
 func NewHash() *Hash {
-	rval := &Hash{0, make([]unsafe.Pointer, max_exponent), 0, default_load_factor}
+	rval := &Hash{exponent: 0, buckets: make([]unsafe.Pointer, max_exponent), size: 0, loadFactor: default_load_factor}
 	b := make([]unsafe.Pointer, 1)
 	rval.buckets[0] = unsafe.Pointer(&b)
 	return rval
 }
+
 func (self *Hash) Size() int {
 	return int(atomic.LoadInt64(&self.size))
 }
 
 /*
  Each will run i on each key and value.
- 
- It returns true if the iteration was interrupted.
- This is the case when one of the HashIterator calls returned true, indicating
- the iteration should be stopped.
+
+ It returns true if the iteration was interrupted.  This is the case
+ when one of the HashIterator calls returned true, indicating the
+ iteration should be stopped.
 */
 func (self *Hash) Each(i HashIterator) bool {
 	return self.getBucketByHashCode(0).each(func(t Thing) bool {
@@ -167,7 +175,8 @@ func (self *Hash) Each(i HashIterator) bool {
 }
 
 /*
- Verify the integrity of the Hash. Used mostly in my own tests but go ahead and call it if you fear corruption.
+ Verify the integrity of the Hash. Used mostly in my own tests but go
+ ahead and call it if you fear corruption.
 */
 func (self *Hash) Verify() error {
 	bucket := self.getBucketByHashCode(0)
@@ -216,7 +225,7 @@ func (self *Hash) isBucket(n *element) (isBucket bool, index, superIndex, subInd
 }
 
 /*
- Describe returns a multi line description of the contents of the map for 
+ Describe returns a multi line description of the contents of the map for
  those of you interested in debugging it or seeing an example of how split-ordered lists work.
 */
 func (self *Hash) Describe() string {
@@ -237,16 +246,47 @@ func (self *Hash) String() string {
 	return fmt.Sprint(self.ToMap())
 }
 
+type hashHit hit
+
+func (self *hashHit) search(cmp *entry, tmpval *hashHit) (rval *hashHit) {
+	rval = tmpval
+	//	rval = &hashHit{self.left, self.element, self.right}
+	for {
+		if rval.element == nil {
+			break
+		}
+		rval.right = rval.element.next()
+		e := rval.element.value.(*entry)
+		if e.hashKey != cmp.hashKey {
+			rval.right = rval.element
+			rval.element = nil
+			break
+		}
+		if cmp.key.Equals(e.key) {
+			break
+		}
+		rval.left = rval.element
+		rval.element = rval.left.next()
+		rval.right = nil
+	}
+	return
+}
+
 /*
  GetHC returns the key with hashCode that equals k.
 
  Use this when you already have the hash code and don't want to force gotomic to calculate it again.
 */
-func (self *Hash) GetHC(hashCode uint32, k Hashable) (rval Thing, ok bool) {
-	testEntry := newRealEntryWithHashCode(k, nil, hashCode)
-	bucket := self.getBucketByHashCode(testEntry.hashCode)
-	hit := (*hashHit)(bucket.search(testEntry))
-	if hit2 := hit.search(testEntry); hit2.element != nil {
+func (self *Hash) GetHC(hashCode uint32, k Hashable, testEntry *entry, tmp *hashHit, hh *hit) (rval Thing, ok bool) {
+	//	fmt.Printf("gotomic: hashcode: %v for key %v ", hashCode, k)
+	//  testEntry := newRealEntryWithHashCode(k, nil, hashCode)
+	testEntry.Set(hashCode, k)
+	//	bucket := self.getBucketByHashCode(testEntry.hashCode)
+	bucket := self.getBucketByIndexWrapper(testEntry.hashCode, hh)
+	hh.Set(bucket)
+	hit := (*hashHit)(bucket.search2(testEntry, hh))
+	tmp.Set(hit)
+	if hit2 := hit.search(testEntry, tmp); hit2.element != nil {
 		rval = hit2.element.value.(*entry).val()
 		ok = true
 	}
@@ -257,7 +297,10 @@ func (self *Hash) GetHC(hashCode uint32, k Hashable) (rval Thing, ok bool) {
  Get returns the value at k and whether it was present in the Hash.
 */
 func (self *Hash) Get(k Hashable) (Thing, bool) {
-	return self.GetHC(k.HashCode(), k)
+	te := ReusableEntry()
+	tmp := ReusableHashHit()
+	hh := ReusableHit()
+	return self.GetHC(k.HashCode(), k, te, tmp, hh)
 }
 
 /*
@@ -270,7 +313,8 @@ func (self *Hash) DeleteHC(hashCode uint32, k Hashable) (rval Thing, ok bool) {
 	for {
 		bucket := self.getBucketByHashCode(testEntry.hashCode)
 		hit := (*hashHit)(bucket.search(testEntry))
-		if hit2 := hit.search(testEntry); hit2.element != nil {
+		tmp := &hashHit{hit.left, hit.element, hit.right}
+		if hit2 := hit.search(testEntry, tmp); hit2.element != nil {
 			if hit2.element.doRemove() {
 				rval = hit2.element.value.(*entry).val()
 				ok = true
@@ -299,7 +343,8 @@ func (self *Hash) PutIfPresent(k Hashable, v Thing, expected Equalable) (rval bo
 	for {
 		bucket := self.getBucketByHashCode(newEntry.hashCode)
 		hit := (*hashHit)(bucket.search(newEntry))
-		if hit2 := hit.search(newEntry); hit2.element == nil {
+		tmp := &hashHit{hit.left, hit.element, hit.right}
+		if hit2 := hit.search(newEntry, tmp); hit2.element == nil {
 			break
 		} else {
 			oldEntry := hit2.element.value.(*entry)
@@ -326,7 +371,8 @@ func (self *Hash) PutIfMissing(k Hashable, v Thing) (rval bool) {
 	for {
 		bucket := self.getBucketByHashCode(newEntry.hashCode)
 		hit := (*hashHit)(bucket.search(newEntry))
-		if hit2 := hit.search(newEntry); hit2.element == nil {
+		tmp := &hashHit{hit.left, hit.element, hit.right}
+		if hit2 := hit.search(newEntry, tmp); hit2.element == nil {
 			if hit2.left.addBefore(newEntry, alloc, hit2.right) {
 				self.addSize(1)
 				return true
@@ -349,7 +395,8 @@ func (self *Hash) PutHC(hashCode uint32, k Hashable, v Thing) (rval Thing, ok bo
 	for {
 		bucket := self.getBucketByHashCode(newEntry.hashCode)
 		hit := (*hashHit)(bucket.search(newEntry))
-		if hit2 := hit.search(newEntry); hit2.element == nil {
+		tmp := &hashHit{hit.left, hit.element, hit.right}
+		if hit2 := hit.search(newEntry, tmp); hit2.element == nil {
 			if hit2.left.addBefore(newEntry, alloc, hit2.right) {
 				self.addSize(1)
 				break
@@ -390,7 +437,8 @@ func (self *Hash) getPreviousBucketIndex(bucketKey uint32) uint32 {
 	return reverse(((bucketKey >> (max_exponent - exp)) - 1) << (max_exponent - exp))
 }
 func (self *Hash) getBucketByHashCode(hashCode uint32) *element {
-	return self.getBucketByIndex(hashCode & ((1 << self.exponent) - 1))
+	x := hashCode & ((1 << self.exponent) - 1)
+	return self.getBucketByIndex(x)
 }
 func (self *Hash) getBucketIndices(index uint32) (superIndex, subIndex uint32) {
 	if index > 0 {
@@ -400,6 +448,7 @@ func (self *Hash) getBucketIndices(index uint32) (superIndex, subIndex uint32) {
 	}
 	return
 }
+
 func (self *Hash) getBucketByIndex(index uint32) (bucket *element) {
 	superIndex, subIndex := self.getBucketIndices(index)
 	subBuckets := *(*[]unsafe.Pointer)(self.buckets[superIndex])
@@ -416,6 +465,34 @@ func (self *Hash) getBucketByIndex(index uint32) (bucket *element) {
 			prev := self.getPreviousBucketIndex(mockEntry.hashKey)
 			previousBucket := self.getBucketByIndex(prev)
 			if hit := previousBucket.search(mockEntry); hit.element == nil {
+				hit.left.addBefore(mockEntry, &element{}, hit.right)
+			} else {
+				atomic.CompareAndSwapPointer(&subBuckets[subIndex], nil, unsafe.Pointer(hit.element))
+			}
+		}
+	}
+	return bucket
+}
+
+func (self *Hash) getBucketByIndexWrapper(hashCode uint32, hh *hit) (bucket *element) {
+	index := hashCode & ((1 << self.exponent) - 1)
+	superIndex, subIndex := self.getBucketIndices(index)
+	subBuckets := *(*[]unsafe.Pointer)(self.buckets[superIndex])
+	for {
+		bucket = (*element)(subBuckets[subIndex])
+		if bucket != nil {
+			break
+		}
+		mockEntry := newMockEntry(index)
+		if index == 0 {
+			bucket := &element{nil, mockEntry}
+			atomic.CompareAndSwapPointer(&subBuckets[subIndex], nil, unsafe.Pointer(bucket))
+		} else {
+			prev := self.getPreviousBucketIndex(mockEntry.hashKey)
+			previousBucket := self.getBucketByIndex(prev)
+			hh.element = previousBucket
+			if hit := previousBucket.search2(mockEntry, hh); hit.element == nil {
+				// if hit := previousBucket.search(mockEntry); hit.element == nil {
 				hit.left.addBefore(mockEntry, &element{}, hit.right)
 			} else {
 				atomic.CompareAndSwapPointer(&subBuckets[subIndex], nil, unsafe.Pointer(hit.element))
