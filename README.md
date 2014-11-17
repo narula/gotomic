@@ -5,10 +5,13 @@ http://github.com/zond/gotomic, with a few changes:
 
 * Remove interfaces; strong typing for keys and hash table entries means fewer memory allocations
 * Thread-local datastructures that are reused instead of allocating temporary datastructures per request
+* Tests are in flux and probably broken
 
 ## Results
-
 Note: garbage collection is turned off.  16 byte keys and interface values (integers). 2^20 keys.
+
+Look here for the benchmarking code:  http://github.com/narula/gomap-bench
+
 ```
 BenchmarkGoMapReadConcurrentNoLock-80   1000000000             4.61 ns/op
 BenchmarkGoMapReadConcurrentLocked-80   20000000               166 ns/op
