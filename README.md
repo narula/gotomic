@@ -1,9 +1,17 @@
-# gotomic
+Non blocking hash table for Go, designed to have read performance
+close to that of go's native map, but without requiring a RWMutex.
+This should perform better if you have a lot of cores.  Copied from
+github.com/zond/gotomic, with a few changes:
 
-Non blocking hash table for Go.
+* Remove interfaces; strong typing for keys and hash table entires means less memory allocation
+* Thread-local datastructures that are reused instead of allocating temporary datastructures per request
 
-## Algorithms
+## Results
 
-The `List` type is implemented using [A Pragmatic Implementation of Non-Blocking Linked-Lists by Timothy L. Harris](http://www.timharris.co.uk/papers/2001-disc.pdf).
-
-The `Hash` type is implemented using [Split-Ordered Lists: Lock-Free Extensible Hash Tables by Ori Shalev and Nir Shavit](http://www.cs.ucf.edu/~dcm/Teaching/COT4810-Spring2011/Literature/SplitOrderedLists.pdf) with the List type used as backend.
+Note: garbage collection is turned off.  16 byte keys and interface values (integers). 2^20 keys.
+```
+BenchmarkGoMapReadConcurrentNoLock-80   1000000000             4.61 ns/op
+BenchmarkGoMapReadConcurrentLocked-80   20000000               166 ns/op
+BenchmarkGotomicReadConcurrent-80       30000000               226 ns/op
+BenchmarkMyGotomicReadConcurrent-80     100000000              30.2 ns/op
+```
