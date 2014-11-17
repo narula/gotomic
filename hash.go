@@ -29,6 +29,29 @@ type Hashable interface {
 	HashCode() uint32
 }
 
+// Convenience type for generic byte keys
+type Key [16]byte
+
+func (k Key) HashCode() uint32 {
+	return crc32.ChecksumIEEE(k[:])
+}
+
+func (k Key) Equals(t Thing) bool {
+	if sk, ok := t.(Key); ok {
+		return sk == k
+	}
+	return false
+}
+
+func MakeKey(x uint64) Key {
+	var i uint64
+	var b [16]byte
+	for i = 0; i < 8; i++ {
+		b[i] = byte((x >> (i * 8)))
+	}
+	return Key(b)
+}
+
 /*
  Convenience type to simplify using ints as keys in a Hash
 */
@@ -142,11 +165,19 @@ func (self *entry) Compare(t Thing) int {
  indirection.
 */
 
+type Bucket struct {
+	padding  [128]byte
+	b        []unsafe.Pointer
+	padding1 [128]byte
+}
+
 type Hash struct {
+	padding    [128]byte
 	exponent   uint32
 	buckets    []unsafe.Pointer
 	size       int64
 	loadFactor float64
+	padding1   [128]byte
 }
 
 func NewHash() *Hash {
@@ -278,6 +309,22 @@ func (self *hashHit) search(cmp *entry, tmpval *hashHit) (rval *hashHit) {
  Use this when you already have the hash code and don't want to force gotomic to calculate it again.
 */
 func (self *Hash) GetHC(hashCode uint32, k Hashable, testEntry *entry, tmp *hashHit, hh *hit) (rval Thing, ok bool) {
+	//	fmt.Printf("gotomic: hashcode: %v for key %v ", hashCode, k)
+	//  testEntry := newRealEntryWithHashCode(k, nil, hashCode)
+	testEntry.Set(hashCode, k)
+	//	bucket := self.getBucketByHashCode(testEntry.hashCode)
+	bucket := self.getBucketByIndexWrapper(testEntry.hashCode, hh)
+	hh.Set(bucket)
+	hit := (*hashHit)(bucket.search2(testEntry, hh))
+	tmp.Set(hit)
+	if hit2 := hit.search(testEntry, tmp); hit2.element != nil {
+		rval = hit2.element.value.(*entry).val()
+		ok = true
+	}
+	return
+}
+
+func (self *Hash) GetHC2(hashCode uint32, k Key, testEntry *entry, tmp *hashHit, hh *hit) (rval Thing, ok bool) {
 	//	fmt.Printf("gotomic: hashcode: %v for key %v ", hashCode, k)
 	//  testEntry := newRealEntryWithHashCode(k, nil, hashCode)
 	testEntry.Set(hashCode, k)
