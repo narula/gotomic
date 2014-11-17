@@ -124,9 +124,9 @@ func (self *element) next() *element {
 		 stuff to us, since we will always lie about our next(), but then again, deleted
 		 elements shouldn't get new children anyway.
 		*/
-		if sp, ok := nextElement.value.(*string); ok && sp == &deletedElement {
-			return nextElement.next()
-		}
+		// if sp, ok := nextElement.value.(*string); ok && sp == &deletedElement {
+		// 	return nextElement.next()
+		// }
 		/*
 		 If our next element is itself deleted (by the same criteria) then we will just replace
 		 it with its next() (which should be the first thing behind it that isn't itself deleted
@@ -181,13 +181,13 @@ func (self *element) Describe() string {
 	return fmt.Sprintf("%#v%v -> %v", self, deleted, self.next().Describe())
 }
 func (self *element) isDeleted() bool {
-	next := atomic.LoadPointer(&self.Pointer)
-	if next == nil {
-		return false
-	}
-	if sp, ok := (*element)(next).value.(*string); ok && sp == &deletedElement {
-		return true
-	}
+	// next := atomic.LoadPointer(&self.Pointer)
+	// if next == nil {
+	// 	return false
+	// }
+	// if sp, ok := (*element)(next).value.(*string); ok && sp == &deletedElement {
+	// 	return true
+	// }
 	return false
 }
 func (self *element) add(c Thing) (rval bool) {
