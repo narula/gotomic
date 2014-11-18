@@ -13,8 +13,8 @@ Note: garbage collection is turned off.  16 byte keys and interface values (inte
 Look here for the benchmarking code:  http://github.com/narula/gomap-bench
 
 ```
-BenchmarkGoMapReadConcurrentNoLock-80   1000000000             4.61 ns/op
-BenchmarkGoMapReadConcurrentLocked-80   20000000               166 ns/op
-BenchmarkGotomicReadConcurrent-80       30000000               226 ns/op
-BenchmarkMyGotomicReadConcurrent-80     100000000              30.2 ns/op
+BenchmarkGoMapReadConcurrentNoLock-80   300000000                5.07 ns/op
+BenchmarkGoMapReadConcurrentLocked-80   10000000               573 ns/op
+BenchmarkZgotomicReadConcurrent-80      20000000               119 ns/op
+BenchmarkGotomicReadConcurrent-80       100000000               23.8 ns/op
 ```
