@@ -8,14 +8,12 @@ import (
 
 var deletedElement = "deleted"
 
-type ListIterator func(e *entry) bool
+type ListIterator func(e entry) bool
 
 type element struct {
-	// The next element in the list. If this pointer has the deleted
-	// flag set it means THIS element, not the next one, is deleted.
+	// The next element in the list.
 	unsafe.Pointer
-	value Thing
-	entry *entry
+	entry entry
 }
 
 type hit struct {
@@ -24,46 +22,17 @@ type hit struct {
 	right   *element
 }
 
-func (self *hit) String() string {
-	return fmt.Sprintf("&hit{%v,%v,%v}", self.left.val(), self.element.val(), self.right.val())
-}
-
 type Thing interface{}
 
 var list_head = "LIST_HEAD"
 
 func (self *element) next() *element {
 	next := atomic.LoadPointer(&self.Pointer)
-	for next != nil {
-		nextElement := (*element)(next)
-		/*
-		 If our next element contains &deletedElement that means WE are deleted, and
-		 we can just return the next-next element. It will make it impossible to add
-		 stuff to us, since we will always lie about our next(), but then again, deleted
-		 elements shouldn't get new children anyway.
-		*/
-		// if sp, ok := nextElement.value.(*string); ok && sp == &deletedElement {
-		// 	return nextElement.next()
-		// }
-		/*
-		 If our next element is itself deleted (by the same criteria) then we will just replace
-		 it with its next() (which should be the first thing behind it that isn't itself deleted
-		 (the power of recursion compels you) and then check again.
-		*/
-		if nextElement.isDeleted() {
-			atomic.CompareAndSwapPointer(&self.Pointer, next, unsafe.Pointer(nextElement.next()))
-			next = atomic.LoadPointer(&self.Pointer)
-		} else {
-			/*
-			 If it isn't deleted then we just return it.
-			*/
-			return nextElement
-		}
+	if next == nil {
+		return nil
 	}
-	/*
-	 And if our next is nil, then we are at the end of the list and can just return nil for next()
-	*/
-	return nil
+	nextElement := (*element)(next)
+	return nextElement
 }
 
 func (self *element) each(i ListIterator) bool {
@@ -79,12 +48,6 @@ func (self *element) each(i ListIterator) bool {
 	return false
 }
 
-func (self *element) val() Thing {
-	if self == nil {
-		return nil
-	}
-	return self.value
-}
 func (self *element) String() string {
 	return fmt.Sprint(self.ToSlice())
 }
@@ -93,33 +56,15 @@ func (self *element) Describe() string {
 		return fmt.Sprint(nil)
 	}
 	deleted := ""
-	if sp, ok := self.value.(*string); ok && sp == &deletedElement {
-		deleted = " (x)"
-	}
 	return fmt.Sprintf("%#v%v -> %v", self, deleted, self.next().Describe())
 }
 func (self *element) isDeleted() bool {
-	// next := atomic.LoadPointer(&self.Pointer)
-	// if next == nil {
-	// 	return false
-	// }
-	// if sp, ok := (*element)(next).value.(*string); ok && sp == &deletedElement {
-	// 	return true
-	// }
 	return false
 }
-func (self *element) add(e *entry) (rval bool) {
+func (self *element) add(e entry) (rval bool) {
 	alloc := &element{}
 	for {
-		/*
-		 If we are deleted then we do not allow adding new children.
-		*/
-		if self.isDeleted() {
-			break
-		}
-		/*
-		 If we succeed in adding before our perceived next, just return true.
-		*/
+		// If we succeed in adding before our perceived next, just return true.
 		if self.addBefore(e, alloc, self.next()) {
 			rval = true
 			break
@@ -127,7 +72,7 @@ func (self *element) add(e *entry) (rval bool) {
 	}
 	return
 }
-func (self *element) addBefore(e *entry, allocatedElement, before *element) bool {
+func (self *element) addBefore(e entry, allocatedElement, before *element) bool {
 	if self.next() != before {
 		return false
 	}
@@ -136,38 +81,39 @@ func (self *element) addBefore(e *entry, allocatedElement, before *element) bool
 	return atomic.CompareAndSwapPointer(&self.Pointer, unsafe.Pointer(before), unsafe.Pointer(allocatedElement))
 }
 
-/*
- inject c into self either before the first matching value (c.Compare(value) == 0), before the first value
- it should be before (c.Compare(value) < 0) or after the first value it should be after (c.Compare(value) > 0).
-*/
-func (self *element) inject(e *entry) {
-	alloc := &element{}
-	for {
-		hit := self.search(e)
-		if hit.left != nil {
-			if hit.element != nil {
-				if hit.left.addBefore(e, alloc, hit.element) {
-					break
-				}
-			} else {
-				if hit.left.addBefore(e, alloc, hit.right) {
-					break
-				}
-			}
-		} else if hit.element != nil {
-			if hit.element.addBefore(e, alloc, hit.right) {
-				break
-			}
-		} else {
-			panic(fmt.Errorf("Unable to inject %v properly into %v, it ought to be first but was injected into the first element of the list!", e, self))
-		}
-	}
-}
+// /*
+//  inject c into self either before the first matching value (c.Compare(value) == 0), before the first value
+//  it should be before (c.Compare(value) < 0) or after the first value it should be after (c.Compare(value) > 0).
+// */
+// func (self *element) inject(e entry) {
+// 	alloc := &element{}
+// 	for {
+// 		hit := self.search(e)
+// 		if hit.left != nil {
+// 			if hit.element != nil {
+// 				if hit.left.addBefore(e, alloc, hit.element) {
+// 					break
+// 				}
+// 			} else {
+// 				if hit.left.addBefore(e, alloc, hit.right) {
+// 					break
+// 				}
+// 			}
+// 		} else if hit.element != nil {
+// 			if hit.element.addBefore(e, alloc, hit.right) {
+// 				break
+// 			}
+// 		} else {
+// 			panic(fmt.Errorf("Unable to inject %v properly into %v, it ought to be first but was injected into the first element of the list!", e, self))
+// 		}
+// 	}
+// }
+
 func (self *element) ToSlice() []Thing {
 	rval := make([]Thing, 0)
 	current := self
 	for current != nil {
-		rval = append(rval, current.value)
+		rval = append(rval, current.entry)
 		current = current.next()
 	}
 	return rval
@@ -182,14 +128,14 @@ func (self *element) ToSlice() []Thing {
  it stops searching), the elementRef and element for the match (if a match) and the last elementRef and element after the match
  (if no match, the first elementRef and element, or nil/nil if at the end of the list).
 */
-func (self *element) search(e *entry) (rval *hit) {
+func (self *element) search(e entry) (rval *hit) {
 	rval = &hit{nil, self, nil}
 	for {
 		if rval.element == nil {
 			return
 		}
 		rval.right = rval.element.next()
-		switch cmp := e.Compare(rval.element.entry); {
+		switch cmp := e.Compare(&(rval.element.entry)); {
 		case cmp < 0:
 			rval.right = rval.element
 			rval.element = nil
@@ -204,15 +150,15 @@ func (self *element) search(e *entry) (rval *hit) {
 	panic(fmt.Sprint("Unable to search for ", e, " in ", self))
 }
 
-func (self *element) search2(e *entry, hh *hit) (rval *hit) {
-	//rval = &hit{nil, self, nil}
+// search with thread-local *hit
+func (self *element) search2(e entry, hh *hit) (rval *hit) {
 	rval = hh
 	for {
 		if rval.element == nil {
 			return
 		}
 		rval.right = rval.element.next()
-		var cmp int = e.Compare(rval.element.entry)
+		var cmp int = e.Compare(&(rval.element.entry))
 		if cmp < 0 {
 			rval.right = rval.element
 			rval.element = nil
@@ -229,10 +175,6 @@ func (self *element) search2(e *entry, hh *hit) (rval *hit) {
 
 func ReusableHit() *hit {
 	return &hit{nil, nil, nil}
-}
-
-func (h *hit) Set(e *element) {
-	h.element = e
 }
 
 func (self *element) doRemove() bool {
