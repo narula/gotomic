@@ -142,12 +142,10 @@ type Bucket struct {
 }
 
 type Hash struct {
-	padding    [128]byte
 	exponent   uint32
 	buckets    []unsafe.Pointer
 	size       int64
 	loadFactor float64
-	padding1   [128]byte
 }
 
 func NewHash() *Hash {
