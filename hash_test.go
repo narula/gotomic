@@ -13,7 +13,7 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func assertMappy(t *testing.T, h *Hash, cmp map[Hashable]Thing) {
+func assertMappy(t *testing.T, h *Hash, cmp map[Key]Thing) {
 	if e := h.Verify(); e != nil {
 		fmt.Println(h.Describe())
 		t.Errorf("%v should be valid, got %v", h, e)
@@ -58,16 +58,6 @@ func fiddleHash(t *testing.T, h *Hash, s string, do, done chan bool) {
 	for k, v := range cmp {
 		if hv, _ := h.Get(k); !reflect.DeepEqual(hv, v) {
 			t.Errorf("2 Get(%v) should produce %v but produced %v", k, v, hv)
-		}
-	}
-	for k, v := range cmp {
-		if hv, _ := h.Delete(k); !reflect.DeepEqual(hv, v) {
-			t.Errorf("1 Delete(%v) should produce %v but produced %v", k, v, hv)
-		}
-	}
-	for k, _ := range cmp {
-		if hv, _ := h.Delete(k); hv != nil {
-			t.Errorf("2 Delete(%v) should produce nil but produced %v", k, hv)
 		}
 	}
 	for k, _ := range cmp {
@@ -262,53 +252,4 @@ func TestHashEachInterrupt(t *testing.T) {
 		t.Error(m, "should have 2 elements. Have", len(m))
 	}
 	fmt.Println("...Done TestHashInterrupt")
-}
-
-func TestHashPutDelete(t *testing.T) {
-	h := NewHash()
-	if v, _ := h.Delete(StringKey("e")); v != nil {
-		t.Error(h, "should not be able to delete 'e' but got ", v)
-	}
-	assertMappy(t, h, map[Hashable]Thing{})
-	h.Put(StringKey("a"), "b")
-	if v, _ := h.Delete(StringKey("e")); v != nil {
-		t.Error(h, "should not be able to delete 'e' but got ", v)
-	}
-	assertMappy(t, h, map[Hashable]Thing{StringKey("a"): "b"})
-	h.Put(StringKey("a"), "b")
-	if v, _ := h.Delete(StringKey("e")); v != nil {
-		t.Error(h, "should not be able to delete 'e' but got ", v)
-	}
-	assertMappy(t, h, map[Hashable]Thing{StringKey("a"): "b"})
-	h.Put(StringKey("c"), "d")
-	if v, _ := h.Delete(StringKey("e")); v != nil {
-		t.Error(h, "should not be able to delete 'e' but got ", v)
-	}
-	assertMappy(t, h, map[Hashable]Thing{StringKey("a"): "b", StringKey("c"): "d"})
-	if v, _ := h.Delete(StringKey("a")); v != "b" {
-		t.Error(h, "should be able to delete 'a' but got ", v)
-	}
-	if v, _ := h.Delete(StringKey("e")); v != nil {
-		t.Error(h, "should not be able to delete 'e' but got ", v)
-	}
-	assertMappy(t, h, map[Hashable]Thing{StringKey("c"): "d"})
-	if v, _ := h.Delete(StringKey("a")); v != nil {
-		t.Error(h, "should not be able to delete 'a' but got ", v)
-	}
-	if v, _ := h.Delete(StringKey("e")); v != nil {
-		t.Error(h, "should not be able to delete 'e' but got ", v)
-	}
-	assertMappy(t, h, map[Hashable]Thing{StringKey("c"): "d"})
-	if v, _ := h.Delete(StringKey("c")); v != "d" {
-		t.Error(h, "should be able to delete 'c' but got ", v)
-	}
-	assertMappy(t, h, map[Hashable]Thing{})
-	if v, _ := h.Delete(StringKey("c")); v != nil {
-		t.Error(h, "should not be able to delete 'c' but got ", v)
-	}
-	if v, _ := h.Delete(StringKey("e")); v != nil {
-		t.Error(h, "should not be able to delete 'e' but got ", v)
-	}
-	assertMappy(t, h, map[Hashable]Thing{})
-	fmt.Println("...Done TestHashPutDelete")
 }

@@ -279,7 +279,7 @@ func (self *Hash) GetHC(hashCode uint32, k Key, ld *LocalData) (rval unsafe.Poin
 	ld.te.Set(hashCode, k)
 	bucket := self.getBucketByIndexWrapper(ld.te.hashCode, ld.hit)
 	ld.hit.element = bucket
-	hit := (*hashHit)(bucket.search2(*ld.te, ld.hit))
+	hit := (*hashHit)(bucket.search_local(*ld.te, ld.hit))
 	ld.hh.Set(hit)
 	if hit2 := hit.search(ld.te, ld.hh); hit2.element != nil {
 		rval = hit2.element.entry.val()
@@ -292,34 +292,6 @@ func (self *Hash) GetHC(hashCode uint32, k Key, ld *LocalData) (rval unsafe.Poin
 func (self *Hash) Get(k Key) (unsafe.Pointer, bool) {
 	ld := InitLocalData()
 	return self.GetHC(k.HashCode(), k, ld)
-}
-
-// DeleteHC removes the key with hashCode that equals k and returns
-// any value it removed.  Use this when you already have the hash code
-// and don't want to force gotomic to calculate it again.
-func (self *Hash) DeleteHC(hashCode uint32, k Key) (rval unsafe.Pointer, ok bool) {
-	testEntry := newRealEntryWithHashCode(k, nil, hashCode)
-	for {
-		bucket := self.getBucketByHashCode(testEntry.hashCode)
-		hit := (*hashHit)(bucket.search(*testEntry))
-		tmp := &hashHit{hit.left, hit.element, hit.right}
-		if hit2 := hit.search(testEntry, tmp); hit2.element != nil {
-			if hit2.element.doRemove() {
-				rval = hit2.element.entry.val()
-				ok = true
-				self.addSize(-1)
-				break
-			}
-		} else {
-			break
-		}
-	}
-	return
-}
-
-// Delete removes k from the Hash and returns any value it removed.
-func (self *Hash) Delete(k Key) (Thing, bool) {
-	return self.DeleteHC(k.HashCode(), k)
 }
 
 // PutIfMissing will insert v under k if k contains expected in the Hash, and return whether it inserted anything.
@@ -473,7 +445,7 @@ func (self *Hash) getBucketByIndexWrapper(hashCode uint32, hh *hit) (bucket *ele
 			prev := self.getPreviousBucketIndex(mockEntry.hashKey)
 			previousBucket := self.getBucketByIndex(prev)
 			hh.element = previousBucket
-			if hit := previousBucket.search2(*mockEntry, hh); hit.element == nil {
+			if hit := previousBucket.search_local(*mockEntry, hh); hit.element == nil {
 				hit.left.addBefore(*mockEntry, &element{}, hit.right)
 			} else {
 				atomic.CompareAndSwapPointer(&subBuckets[subIndex], nil, unsafe.Pointer(hit.element))

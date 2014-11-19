@@ -36,19 +36,13 @@ func fiddle(t *testing.T, nr *element, do, done chan bool) {
 		x := rand.Int()
 		nr.add(x)
 	}
-	for i := 0; i < num; i++ {
-		if x, ok := nr.remove(); !ok {
-			t.Errorf("%v should pop something, but got %v", nr, x)
-		}
-	}
 	done <- true
 }
 
-func fiddleAndAssertSort(t *testing.T, nr *element, do chan bool, ichan, rchan chan []c) {
+func fiddleAndAssertSort(t *testing.T, nr *element, do chan bool, ichan chan []c) {
 	<-do
 	num := 1000
 	var injected []c
-	var removed []c
 	for i := 0; i < num; i++ {
 		v := c(-int(math.Abs(float64(rand.Int()))))
 		nr.inject(v)
@@ -57,60 +51,12 @@ func fiddleAndAssertSort(t *testing.T, nr *element, do chan bool, ichan, rchan c
 			t.Error(nr, "should be correct, but got", err)
 		}
 	}
-	for i := 0; i < num; i++ {
-		if r, ok := nr.remove(); ok {
-			removed = append(removed, r.(c))
-		} else {
-			t.Error(nr, "should remove something, but got", r)
-		}
-	}
 	ichan <- injected
-	rchan <- removed
-}
-
-func assertListy(t *testing.T, l *List, cmp []Thing) {
-	if l.Size() != len(cmp) {
-		t.Errorf("%v should have size %v but had %v", l, len(cmp), l.Size())
-	}
-	if sl := l.ToSlice(); !reflect.DeepEqual(sl, cmp) {
-		t.Errorf("%v should be %#v but is %#v", l, cmp, sl)
-	}
-	tmp := make([]Thing, len(cmp))
-	for ind, v := range cmp {
-		popped, _ := l.Pop()
-		tmp[len(cmp)-ind-1] = popped
-		if !reflect.DeepEqual(v, popped) {
-			t.Errorf("element %v of %v should be %v but was %v", ind, l, v, popped)
-		}
-	}
-	for _, v := range tmp {
-		l.Push(v)
-	}
-}
-
-func TestList(t *testing.T) {
-	l := NewList()
-	assertListy(t, l, []Thing{})
-	l.Push("plur")
-	assertListy(t, l, []Thing{"plur"})
-	l.Push("knap")
-	assertListy(t, l, []Thing{"knap", "plur"})
-	l.Push("hehu")
-	assertListy(t, l, []Thing{"hehu", "knap", "plur"})
-	l.Push("blar")
-	assertListy(t, l, []Thing{"blar", "hehu", "knap", "plur"})
 }
 
 func assertSlicey(t *testing.T, nr *element, cmp []Thing) {
 	if sl := nr.ToSlice(); !reflect.DeepEqual(sl, cmp) {
 		t.Errorf("%v should be %#v but is %#v", nr.Describe(), cmp, sl)
-	}
-}
-
-func assertPop(t *testing.T, nr *element, th Thing) {
-	p, _ := nr.remove()
-	if !reflect.DeepEqual(p, th) {
-		t.Error(nr, " should pop ", th, " but popped ", p)
 	}
 }
 
@@ -123,14 +69,6 @@ func TestPushPop(t *testing.T) {
 	assertSlicey(t, nr, []Thing{nil, "haj", "hej"})
 	nr.add("hoj")
 	assertSlicey(t, nr, []Thing{nil, "hoj", "haj", "hej"})
-	assertPop(t, nr, "hoj")
-	assertSlicey(t, nr, []Thing{nil, "haj", "hej"})
-	assertPop(t, nr, "haj")
-	assertSlicey(t, nr, []Thing{nil, "hej"})
-	assertPop(t, nr, "hej")
-	assertSlicey(t, nr, []Thing{nil})
-	assertPop(t, nr, nil)
-	assertSlicey(t, nr, []Thing{nil})
 }
 
 func TestConcPushPop(t *testing.T) {
@@ -166,25 +104,34 @@ func searchTest(t *testing.T, nr *element, s c, l, n, r Thing) {
 	}
 }
 
+func makeStringEntry(ch string) entry {
+	k := Key([]byte(ch))
+	return *(newRealEntry(k, unsafe.Pointer(&ch)))
+}
+
 func TestListEach(t *testing.T) {
 	nr := new(element)
-	nr.add("h")
-	nr.add("g")
-	nr.add("f")
-	nr.add("d")
-	nr.add("c")
-	nr.add("b")
+	nr.add(makeStringEntry("h"))
+	nr.add(makeStringEntry("g"))
+	nr.add(makeStringEntry("f"))
+	nr.add(makeStringEntry("d"))
+	nr.add(makeStringEntry("c"))
+	nr.add(makeStringEntry("b"))
 
-	var a []Thing
+	var a []*entry
 
-	nr.each(func(t Thing) bool {
-		a = append(a, t)
+	nr.each(func(e entry) bool {
+		a = append(a, e)
 		return false
 	})
 
-	exp := []Thing{nil, "b", "c", "d", "f", "g", "h"}
-	if !reflect.DeepEqual(a, exp) {
-		t.Error(a, "should be", exp)
+	exp := []entry{makeStringEntry("b"), makeStringEntry("c"), makeStringEntry("d"), makeStringEntry("f"), makeStringEntry("g"), makeStringEntry("h")}
+	for i, _ := range exp {
+		ch1 := *(*string)(exp[i].value)
+		ch2 := *(*string)(nr[i+1].value)
+		if ch1 != ch2 {
+			t.Error(ch1, "should be", ch2)
+		}
 	}
 }
 
@@ -197,10 +144,10 @@ func TestListEachInterrupt(t *testing.T) {
 	nr.add("c")
 	nr.add("b")
 
-	var a []Thing
+	var a []entry
 
-	interrupted := nr.each(func(t Thing) bool {
-		a = append(a, t)
+	interrupted := nr.each(func(e entry) bool {
+		a = append(a, e)
 		return len(a) == 2
 	})
 
@@ -315,11 +262,9 @@ func TestConcInjectAndSearch(t *testing.T) {
 	assertSlicey(t, nr, []Thing{&list_head, c(3), c(4), c(5), c(7), c(8), c(9)})
 	do := make(chan bool)
 	ichan := make(chan []c)
-	rchan := make(chan []c)
 	var injected [][]c
-	var removed [][]c
 	for i := 0; i < runtime.NumCPU(); i++ {
-		go fiddleAndAssertSort(t, nr, do, ichan, rchan)
+		go fiddleAndAssertSort(t, nr, do, ichan)
 	}
 	close(do)
 	for i := 0; i < runtime.NumCPU(); i++ {
@@ -335,19 +280,12 @@ func TestConcInjectAndSearch(t *testing.T) {
 		searchTest(t, nr, c(10), c(9), nil, nil)
 		searchTest(t, nr, c(11), c(9), nil, nil)
 		injected = append(injected, <-ichan)
-		removed = append(removed, <-rchan)
 	}
 	assertSlicey(t, nr, []Thing{&list_head, c(3), c(4), c(5), c(7), c(8), c(9)})
 	imap := make(map[c]int)
 	for _, vals := range injected {
 		for _, val := range vals {
 			imap[val] = imap[val] + 1
-		}
-	}
-	rmap := make(map[c]int)
-	for _, vals := range removed {
-		for _, val := range vals {
-			rmap[val] = rmap[val] + 1
 		}
 	}
 	for val, num := range imap {

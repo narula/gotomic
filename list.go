@@ -6,8 +6,6 @@ import (
 	"unsafe"
 )
 
-var deletedElement = "deleted"
-
 type ListIterator func(e entry) bool
 
 type element struct {
@@ -55,12 +53,9 @@ func (self *element) Describe() string {
 	if self == nil {
 		return fmt.Sprint(nil)
 	}
-	deleted := ""
-	return fmt.Sprintf("%#v%v -> %v", self, deleted, self.next().Describe())
+	return fmt.Sprintf("%#v -> %v", self, self.next().Describe())
 }
-func (self *element) isDeleted() bool {
-	return false
-}
+
 func (self *element) add(e entry) (rval bool) {
 	alloc := &element{}
 	for {
@@ -72,6 +67,7 @@ func (self *element) add(e entry) (rval bool) {
 	}
 	return
 }
+
 func (self *element) addBefore(e entry, allocatedElement, before *element) bool {
 	if self.next() != before {
 		return false
@@ -119,39 +115,21 @@ func (self *element) ToSlice() []Thing {
 	return rval
 }
 
-/*
- search for c in self.
-
- Will stop searching when finding nil or an element that should be after c (c.Compare(element) < 0).
-
- Will return a hit containing the last elementRef and element before a match (if no match, the last elementRef and element before
- it stops searching), the elementRef and element for the match (if a match) and the last elementRef and element after the match
- (if no match, the first elementRef and element, or nil/nil if at the end of the list).
-*/
-func (self *element) search(e entry) (rval *hit) {
-	rval = &hit{nil, self, nil}
-	for {
-		if rval.element == nil {
-			return
-		}
-		rval.right = rval.element.next()
-		switch cmp := e.Compare(&(rval.element.entry)); {
-		case cmp < 0:
-			rval.right = rval.element
-			rval.element = nil
-			return
-		case cmp == 0:
-			return
-		}
-		rval.left = rval.element
-		rval.element = rval.left.next()
-		rval.right = nil
-	}
-	panic(fmt.Sprint("Unable to search for ", e, " in ", self))
+// search without thread-local *hit
+func (self *element) search(e entry) *hit {
+	tmp := &hit{nil, self, nil}
+	return self.search_local(e, tmp)
 }
 
-// search with thread-local *hit
-func (self *element) search2(e entry, hh *hit) (rval *hit) {
+// search for e in self.  Will stop searching when finding nil or an
+// element that should be after e (e.Compare(element) < 0).  Will
+// return a hit containing the last elementRef and element before a
+// match (if no match, the last elementRef and element before it stops
+// searching), the elementRef and element for the match (if a match)
+// and the last elementRef and element after the match (if no match,
+// the first elementRef and element, or nil/nil if at the end of the
+// list).
+func (self *element) search_local(e entry, hh *hit) (rval *hit) {
 	rval = hh
 	for {
 		if rval.element == nil {
@@ -180,26 +158,3 @@ func ReusableHit() *hit {
 func (self *element) doRemove() bool {
 	return false
 }
-
-// Just a shorthand to hide the inner workings of our removal mechanism.
-// func (self *element) doRemove() bool {
-// 	return self.add(&deletedElement)
-// }
-// func (self *element) remove() (rval Thing, ok bool) {
-// 	n := self.next()
-// 	for {
-// 		// No children to remove.
-// 		if n == nil {
-// 			break
-// 		}
-// 		// We managed to remove next!
-// 		if n.doRemove() {
-// 			self.next()
-// 			rval = n.value
-// 			ok = true
-// 			break
-// 		}
-// 		n = self.next()
-// 	}
-// 	return
-// }
